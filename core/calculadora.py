@@ -4,11 +4,11 @@ class CalculadoraHexagonal:
     """Realiza cálculos geométricos para empacotamento hexagonal."""
     
     @staticmethod
-    def calcular_posicao_hexagonal(linha_atual, diametro_linha_m):
+    def calcular_posicao_hexagonal(linha_atual, diametro_linha_m, bobina_largura):
         """Calcula a próxima posição no padrão hexagonal."""
-        offset_x = diametro_linha_m if linha_atual % 2 == 1 else diametro_linha_m/2
-        offset_y = diametro_linha_m * math.sqrt(3)/2
-        return offset_x, offset_y
+        pos_x = -bobina_largura/2 + diametro_linha_m/2 + (linha_atual * diametro_linha_m)
+        pos_y = (linha_atual % 2) * (diametro_linha_m * math.sqrt(3)/2)
+        return pos_x, pos_y
     
     @staticmethod
     def calcular_raio_atual(bobina, camada, pos_y, diametro_linha_m):
