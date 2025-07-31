@@ -1,0 +1,22 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# IDE specific
+.vscode/
+.idea/
+
+# Logs and databases
+*.log
+*.sqlite
+
+# Byte-compiled / optimized files
+*.pyc
+*.pyo
