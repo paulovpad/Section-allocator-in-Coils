@@ -43,16 +43,18 @@ class AlocadorBobinas:
         """Tenta alocar uma linha em qualquer bobina disponível."""
         for bobina in bobinas:
             if self.validador.validar_peso(bobina, linha):
-                # Tenta adicionar a uma camada existente
-                for camada in bobina.camadas:
+                # Tenta na ÚLTIMA camada primeiro
+                if bobina.camadas and self._tentar_adicionar_linha_na_camada(linha, bobina.camadas[-1], bobina):
+                    return True
+                # Tenta nas camadas anteriores (ordem inversa)
+                for camada in reversed(bobina.camadas[:-1]):
                     if self._tentar_adicionar_linha_na_camada(linha, camada, bobina):
                         return True
-                
-                # Tenta criar nova camada
+                # Só cria nova camada se falhar em todas
                 if self._tentar_criar_nova_camada(linha, bobina):
                     return True
-        return False
-    
+        return False        
+               
     def _tentar_adicionar_linha_na_camada(self, linha, camada, bobina):
         """Tenta adicionar linha em uma camada existente."""
         diametro_linha_m = linha.diametro_efetivo / 1000
@@ -77,6 +79,11 @@ class AlocadorBobinas:
     def _tentar_criar_nova_camada(self, linha, bobina):
         """Tenta criar nova camada para a linha."""
         diametro_linha_m = linha.diametro_efetivo / 1000
+
+        # Alterna a borda inicial baseado no número de camadas
+        direcao = -1 if len(bobina.camadas) % 2 == 0 else 1
+        pos_x = direcao * (bobina.largura/2 - diametro_linha_m/2)  # Borda esq/dir
+        pos_y = diametro_linha_m/2
         
         # Calcula diâmetro base para nova camada
         if bobina.camadas:
