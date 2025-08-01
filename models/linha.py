@@ -5,7 +5,8 @@ class Linha:
         1: 1.0, 2: 0.9, 3: 0.75, 4: 0.6, 5: 0.45, 6: 0.3, 7: 0.15
     }
     
-    def __init__(self, diametro, comprimento, peso_por_metro_kg, raio_minimo_m):
+    def __init__(self, codigo, diametro, comprimento, peso_por_metro_kg, raio_minimo_m):  # Adicione codigo aqui
+        self.codigo = codigo  # Código único de identificação
         self.diametro = diametro  # em mm
         self.comprimento = comprimento  # em m
         self.peso_por_metro_kg = peso_por_metro_kg
