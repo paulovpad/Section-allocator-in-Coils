@@ -13,8 +13,8 @@ class Bobina:
     def adicionar_camada(self, camada):
         """Adiciona uma nova camada à bobina."""
         self.camadas.append(camada)
-        self.peso_atual_ton += sum(linha.peso_ton for linha in camada.linhas)
-    
+        self.peso_atual_ton += sum(linha['objeto'].peso_ton for linha in camada.linhas)  # Acesse o objeto Linha
+ 
     @property
     def capacidade_disponivel(self):
         """Retorna o peso ainda disponível na bobina."""
