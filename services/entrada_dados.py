@@ -52,6 +52,8 @@ class EntradaDados:
         """Solicita dados de uma única linha."""
         while True:
             try:
+                print("\n--- Dados do Flexível ---")
+                codigo = input("Código de identificação: ").strip()
                 diametro = float(input("Diâmetro (mm): "))
                 comprimento = float(input("Comprimento (m): "))
                 peso_metro_kg = float(input("Peso por metro (kg/m): "))
@@ -61,6 +63,6 @@ class EntradaDados:
                     print("Erro: Valores devem ser positivos!")
                     continue
                 
-                return Linha(diametro, comprimento, peso_metro_kg, raio_min)
+                return Linha(codigo, diametro, comprimento, peso_metro_kg, raio_min)
             except ValueError:
                 print("Erro: Insira um número válido!")
