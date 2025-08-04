@@ -4,28 +4,20 @@ from pathlib import Path
 class LeitorExcel:
     @staticmethod
     def ler_bobinas(caminho_arquivo):
-        """
-        Lê dados da aba 'Bobinas' com tratamento flexível para nomes de colunas
-        Retorna: Lista de dicionários com os dados
-        """
+        """Versão com tratamento robusto para coluna de peso"""
         try:
-            # Primeiro verifica se o arquivo existe
-            if not Path(caminho_arquivo).is_file():
-                raise FileNotFoundError(f"Arquivo não encontrado: {caminho_arquivo}")
-
-            # Tentar ler sem especificar colunas para descobrir os nomes reais
             df = pd.read_excel(caminho_arquivo, sheet_name='Bobinas')
             
-            # Mapeamento de colunas esperadas e possíveis variações
+            # Mapeamento de colunas esperadas
             mapeamento = {
-                'ID': ['ID', 'Código', 'Numero'],
-                'Diâmetro Externo (m)': ['Diâmetro Externo (m)', 'DE (m)', 'Diametro Externo'],
-                'Diâmetro Interno (m)': ['Diâmetro Interno (m)', 'DI (m)', 'Diametro Interno'],
-                'Comprimento (m)': ['Comprimento (m)', 'Comp (m)', 'Metragem'],
-                'Peso Máximo (kg)': ['Peso Máximo (kg)', 'Peso Max (kg)', 'Capacidade (kg)']
+                'ID': ['ID', 'Código'],
+                'Diâmetro Externo (m)': ['Diâmetro Externo (m)', 'DE'],
+                'Diâmetro Interno (m)': ['Diâmetro Interno (m)', 'DI'],
+                'Comprimento (m)': ['Comprimento (m)', 'Comp'],
+                'Peso Máximo (kg)': ['Peso Máximo (kg)', 'Peso Max']
             }
             
-            # Encontrar correspondências
+            # Renomear colunas
             colunas_renomear = {}
             for padrao, alternativas in mapeamento.items():
                 for alternativa in alternativas:
@@ -33,17 +25,7 @@ class LeitorExcel:
                         colunas_renomear[alternativa] = padrao
                         break
             
-            # Verificar colunas obrigatórias
-            obrigatorias = ['ID', 'Diâmetro Externo (m)', 'Diâmetro Interno (m)']
-            for col in obrigatorias:
-                if col not in colunas_renomear.values():
-                    raise ValueError(f"Coluna obrigatória não encontrada: {col}. Colunas disponíveis: {list(df.columns)}")
-            
-            # Renomear colunas e selecionar apenas as necessárias
             df = df.rename(columns=colunas_renomear)
-            colunas_selecionadas = [c for c in mapeamento.keys() if c in colunas_renomear.values()]
-            df = df[colunas_selecionadas]
-            
             return df.to_dict('records')
             
         except Exception as e:
@@ -51,19 +33,16 @@ class LeitorExcel:
 
     @staticmethod
     def ler_linhas(caminho_arquivo):
-        """
-        Lê dados da aba 'Linhas' com tratamento flexível
-        Retorna: Lista de dicionários com os dados
-        """
+        """Lê dados da aba 'Linhas' com tratamento flexível"""
         try:
             df = pd.read_excel(caminho_arquivo, sheet_name='Linhas')
             
             mapeamento = {
                 'ID': ['ID', 'Código'],
-                'Diâmetro (m)': ['Diâmetro (m)', 'Diametro (m)', 'Espessura'],
-                'Comprimento Necessário (m)': ['Comprimento Necessário (m)', 'Comp Necessario', 'Metragem Necessária'],
-                'Peso por Metro (kg/m)': ['Peso por Metro (kg/m)', 'Peso Unitário', 'Peso/m'],
-                'Raio Mínimo (m)': ['Raio Mínimo (m)', 'Raio Min', 'Curvatura Mínima']
+                'Diâmetro (m)': ['Diâmetro (m)', 'Diametro'],
+                'Comprimento Necessário (m)': ['Comprimento Necessário (m)', 'Comp Necessario'],
+                'Peso por Metro (kg/m)': ['Peso por Metro (kg/m)', 'Peso Unitario'],
+                'Raio Mínimo (m)': ['Raio Mínimo (m)', 'Raio Min']
             }
             
             colunas_renomear = {}
@@ -73,16 +52,32 @@ class LeitorExcel:
                         colunas_renomear[alternativa] = padrao
                         break
             
-            obrigatorias = ['ID', 'Diâmetro (m)', 'Comprimento Necessário (m)']
-            for col in obrigatorias:
-                if col not in colunas_renomear.values():
-                    raise ValueError(f"Coluna obrigatória não encontrada: {col}. Colunas disponíveis: {list(df.columns)}")
-            
             df = df.rename(columns=colunas_renomear)
-            colunas_selecionadas = [c for c in mapeamento.keys() if c in colunas_renomear.values()]
-            df = df[colunas_selecionadas]
-            
             return df.to_dict('records')
             
         except Exception as e:
             raise Exception(f"Erro ao ler linhas: {str(e)}")
+
+    @staticmethod
+    def calcular_camadas(bobina, linhas_alocadas):
+        """Calcula a disposição física das linhas na bobina"""
+        linhas_ordenadas = sorted(linhas_alocadas, 
+                                key=lambda x: x['Diâmetro (m)'], 
+                                reverse=True)
+        
+        camadas = []
+        raio_atual = bobina['Diâmetro Interno (m)'] / 2
+        
+        for i, linha in enumerate(linhas_ordenadas, 1):
+            camada = {
+                'Camada': i,
+                'Linha ID': linha['ID'],
+                'Diâmetro': linha['Diâmetro (m)'],
+                'Raio Interno': raio_atual,
+                'Raio Externo': raio_atual + linha['Diâmetro (m)'],
+                'Comprimento': linha['Comprimento Necessário (m)']
+            }
+            camadas.append(camada)
+            raio_atual += linha['Diâmetro (m)']
+        
+        return camadas

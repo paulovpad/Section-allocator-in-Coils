@@ -1,101 +1,70 @@
-import sys
-from pathlib import Path
 from services.leitor_excel import LeitorExcel
+import sys
 
-def mostrar_erro(mensagem):
-    """Exibe mensagens de erro formatadas"""
-    print(f"\n⛔ ERRO: {mensagem}")
-    print("Verifique:")
-    print("1. Se o arquivo Excel existe no local especificado")
-    print("2. Se as abas 'Bobinas' e 'Linhas' estão corretas")
-    print("3. Se os nomes das colunas correspondem ao esperado\n")
-
-def carregar_dados(caminho_planilha):
-    """Carrega e valida todos os dados da planilha"""
-    try:
-        print(f"\n📊 Carregando dados de: {Path(caminho_planilha).name}")
-        
-        # Verificar se o arquivo existe
-        if not Path(caminho_planilha).exists():
-            raise FileNotFoundError(f"Arquivo não encontrado: {caminho_planilha}")
-        
-        # Carregar dados
-        bobinas = LeitorExcel.ler_bobinas(caminho_planilha)
-        linhas = LeitorExcel.ler_linhas(caminho_planilha)
-        
-        # Validações básicas
-        if not bobinas:
-            raise ValueError("Nenhuma bobina encontrada na planilha")
-        if not linhas:
-            raise ValueError("Nenhuma linha encontrada na planilha")
-        
-        print(f"✅ {len(bobinas)} bobinas carregadas")
-        print(f"✅ {len(linhas)} linhas carregadas")
-        
-        return bobinas, linhas
-        
-    except Exception as e:
-        mostrar_erro(str(e))
-        sys.exit(1)
-
-def processar_alocacao(bobinas, linhas):
-    """Simula o processamento da alocação"""
-    print("\n⚙️ Processando alocação...")
+def mostrar_camadas(bobina, camadas):
+    """Exibe a alocação por camadas de forma visual"""
+    print("\n📊 DISPOSIÇÃO DAS CAMADAS NA BOBINA:")
+    print(f"Diâmetro Interno: {bobina['Diâmetro Interno (m)']}m")
+    print(f"Diâmetro Externo: {bobina['Diâmetro Externo (m)']}m\n")
     
-    resultados = []
-    for linha in linhas:
-        for bobina in bobinas:
-            # Verificação de diâmetro
-            if linha['Diâmetro (m)'] > bobina['Diâmetro Interno (m)']:
-                continue
-                
-            # Verificação de peso (simplificada)
-            peso_total = linha['Comprimento Necessário (m)'] * linha['Peso por Metro (kg/m)']
-            if 'Peso Máximo (kg)' in bobina and peso_total > bobina['Peso Máximo (kg)']:
-                continue
-                
-            # Verificação de raio mínimo (se existir nos dados)
-            if 'Raio Mínimo (m)' in linha and 'Diâmetro Externo (m)' in bobina:
-                raio_bobina = bobina['Diâmetro Externo (m)'] / 2
-                if linha['Raio Mínimo (m)'] > raio_bobina:
-                    continue
-            
-            # Se passou em todas as verificações
-            resultados.append({
-                'Linha ID': linha['ID'],
-                'Bobina ID': bobina['ID'],
-                'Comprimento Alocado': linha['Comprimento Necessário (m)']
-            })
-            break
+    print(f"{'Camada':<7} | {'Linha':<6} | {'Diâmetro':<9} | {'Raio (m)':<12} | {'Comprimento':<12} | {'Peso (kg)':<10}")
+    print("-"*80)
     
-    return resultados
+    for camada in camadas:
+        peso = camada['Comprimento'] * next(
+            linha['Peso por Metro (kg/m)'] 
+            for linha in linhas_alocadas 
+            if linha['ID'] == camada['Linha ID']
+        )
+        print(f"{camada['Camada']:<7} | {camada['Linha ID']:<6} | "
+              f"{camada['Diâmetro']:>8.3f}m | "
+              f"{camada['Raio Interno']:.3f}-{camada['Raio Externo']:.3f}m | "
+              f"{camada['Comprimento']:>10}m | "
+              f"{peso:>8.1f}")
 
 def main():
-    print("\n=== SISTEMA DE ALOCAÇÃO DE LINHAS EM BOBINAS ===")
-    
-    # Configuração do caminho - ajuste conforme necessário
-    caminho_planilha = r'C:\Users\paulo.andrade\Desktop\dados.xlsx'
+    print("=== SISTEMA DE ALOCAÇÃO DE LINHAS EM BOBINAS ===")
     
     try:
         # Carregar dados
-        bobinas, linhas = carregar_dados(caminho_planilha)
+        caminho = r'C:\Users\paulo.andrade\Desktop\dados.xlsx'
+        bobinas = LeitorExcel.ler_bobinas(caminho)
+        linhas = LeitorExcel.ler_linhas(caminho)
         
-        # Processar alocação
-        resultados = processar_alocacao(bobinas, linhas)
+        print(f"\n✅ {len(bobinas)} bobina(s) carregada(s)")
+        print(f"✅ {len(linhas)} linha(s) carregada(s)")
         
-        # Exibir resultados
-        print("\n📝 RESULTADOS DA ALOCAÇÃO:")
-        if not resultados:
-            print("Nenhuma alocação foi possível com os critérios atuais")
-        else:
-            for i, res in enumerate(resultados, 1):
-                print(f"{i}. Linha {res['Linha ID']} → Bobina {res['Bobina ID']} "
-                      f"(Alocado: {res['Comprimento Alocado']}m)")
-    
-    except KeyboardInterrupt:
-        print("\nOperação cancelada pelo usuário")
+        # Seleciona a primeira bobina
+        bobina = bobinas[0]
+        global linhas_alocadas  # Para acesso na função mostrar_camadas
+        linhas_alocadas = []
+        
+        print("\n🔍 ALOCANDO LINHAS POR DIÂMETRO (maiores primeiro):")
+        for linha in sorted(linhas, key=lambda x: x['Diâmetro (m)'], reverse=True):
+            if linha['Diâmetro (m)'] <= bobina['Diâmetro Interno (m)']:
+                linhas_alocadas.append(linha)
+                print(f"Linha {linha['ID']} (Ø{linha['Diâmetro (m)']}m) alocada")
+        
+        # Calcular e mostrar camadas
+        camadas = LeitorExcel.calcular_camadas(bobina, linhas_alocadas)
+        mostrar_camadas(bobina, camadas)
+        
+        # RESUMO DE ALOCAÇÃO (NOVO)
+        if camadas:
+            peso_total = sum(
+                linha['Comprimento Necessário (m)'] * linha['Peso por Metro (kg/m)']
+                for linha in linhas_alocadas
+            )
+            diametro_final = camadas[-1]['Raio Externo'] * 2
+            
+            print(f"\n⚖️ RESUMO DE ALOCAÇÃO:")
+            print(f"• Peso total: {peso_total:.1f} kg (de {bobina['Peso Máximo (kg)']} kg disponíveis)")
+            print(f"• Diâmetro final: {diametro_final:.2f}m (de {bobina['Diâmetro Externo (m)']}m disponível)")
+            print(f"• Espaço utilizado: {diametro_final/bobina['Diâmetro Externo (m)']:.1%}")
+        
     except Exception as e:
-        mostrar_erro(f"Erro inesperado: {str(e)}")
+        print(f"\n⛔ ERRO: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
