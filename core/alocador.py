@@ -55,3 +55,46 @@ class AlocadorBobinas:
         nova_camada.adicionar_linha(linha, pos_x, pos_y)
         bobina.adicionar_camada(nova_camada)
         return True
+
+    def alocar(self, linhas, bobinas):
+        """Método principal para alocar linhas em bobinas."""
+        linhas_ordenadas = self._ordenar_linhas(linhas)
+        bobinas_ordenadas = self._ordenar_bobinas(bobinas)
+        linhas_nao_alocadas = []
+        
+        for linha in linhas_ordenadas:
+            if not self._alocar_linha(linha, bobinas_ordenadas):
+                linhas_nao_alocadas.append(linha)
+        
+        return {
+            'bobinas_utilizadas': [b for b in bobinas_ordenadas if b.camadas],
+            'linhas_nao_alocadas': linhas_nao_alocadas
+        }
+    
+    def _ordenar_linhas(self, linhas):
+        """Ordena linhas por prioridade de alocação."""
+        return sorted(linhas, key=lambda x: (
+            x.flexibilidade, 
+            -x.diametro,
+            x.raio_minimo_m / (x.diametro / 1000)
+        ))  # Corrigido o fechamento de parênteses
+    
+    def _ordenar_bobinas(self, bobinas):
+        """Ordena bobinas por capacidade."""
+        return sorted(bobinas, key=lambda b: (
+            (b.diametro_externo - b.diametro_interno) * b.largura * b.peso_maximo_ton
+        ), reverse=True)
+    
+    def _alocar_linha(self, linha, bobinas):
+        """Tenta alocar uma linha em qualquer bobina disponível."""
+        for bobina in bobinas:
+            if self.validador.validar_peso(bobina, linha):
+                # 1. Tenta apenas na ÚLTIMA camada (se existir)
+                if bobina.camadas:
+                    if self._tentar_adicionar_linha_na_camada(linha, bobina.camadas[-1], bobina):
+                        return True
+                
+                # 2. Se falhou ou não há camadas, tenta nova camada
+                if self._tentar_criar_nova_camada(linha, bobina):
+                    return True
+        return False
