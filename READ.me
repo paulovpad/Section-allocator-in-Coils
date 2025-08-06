@@ -1,0 +1,59 @@
+# 🌀 Sistema de Alocação de Linhas em Bobinas
+
+Otimize o armazenamento de cabos flexíveis em bobinas industriais usando empacotamento hexagonal inteligente!
+
+## 🚀 Funcionalidades Principais
+- Alocação automática de linhas/cabos em bobinas
+- Cálculo de posicionamento hexagonal otimizado
+- Validação de restrições físicas (peso, raio mínimo, colisões)
+- Geração de relatórios detalhados de alocação
+- Entrada de dados via Excel ou interface interativa
+
+## ⚙️ Instalação
+```bash
+# Clone o repositório
+git clone https://github.com/seu-usuario/alocador-bobinas.git
+
+# Acesse o diretório
+cd alocador-bobinas
+
+# Instale as dependências
+pip install -r requirements.txt
+
+Explicação do algoritmo:
+
+# Visão Geral
+
+O sistema tem como objetivo alocar linhas (cabos/fios) em bobinas usando um padrão de empacotamento hexagonal. O código está organizado em módulos:
+- core: Contém a lógica principal de alocação (`alocador.py`), cálculos geométricos (`calculadora.py`) e validações (`validador.py`).
+- models: Define as classes `Bobina`, `Linha` e `Camada`.
+- services: Responsável pela entrada de dados (via Excel ou interativa) e geração de relatórios.
+- main.py: Ponto de entrada do programa.
+
+# Funcionamento do Algoritmo de Alocação
+
+O coração do sistema está na classe `AlocadorBobinas` (em `alocador.py`). O método principal é `alocar(linhas, bobinas)`, que tenta alocar as linhas nas bobinas seguindo estas etapas:
+
+1. Ordenação das linhas e bobinas**:
+   - As linhas são ordenadas por prioridade: flexibilidade (quanto maior a flexibilidade, menor o fator de redução do diâmetro), diâmetro decrescente e razão entre raio mínimo e diâmetro.
+   - As bobinas são ordenadas por capacidade (volume disponível) decrescente.
+
+2. Tentativa de alocação de cada linha**:
+   - Para cada linha, tenta alocar em uma das bobinas (na ordem de capacidade).
+   - Em cada bobina, tenta:
+     a. Adicionar a linha na última camada existente (usando empacotamento hexagonal).
+     b. Se não for possível, cria uma nova camada na bobina.
+
+3. Adicionar linha em uma camada existente** (`_tentar_adicionar_linha_na_camada`):
+   - Calcula posições hexagonais iterativamente (até um limite baseado na largura da bobina).
+   - Alterna o lado inicial (esquerda/direita) a cada camada para otimizar o espaço.
+   - Para cada posição candidata, verifica:
+     - Largura: se a linha cabe na bobina.
+     - Colisão: se não há sobreposição com outras linhas na mesma camada.
+     - Raio mínimo: se o raio efetivo naquela posição é suficiente para a linha.
+
+4. Criar uma nova camada** (`_tentar_criar_nova_camada`):
+   - Define a posição inicial na borda da bobina (alternando o lado a cada camada).
+   - Calcula o diâmetro base da nova camada (baseado na camada anterior, se houver, ou no diâmetro interno da bobina).
+   - Verifica se a camada cabe no diâmetro externo da bobina.
+   - Adiciona a linha na nova camada.
