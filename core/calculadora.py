@@ -18,7 +18,7 @@ class CalculadoraHexagonal:
     @staticmethod
     def calcular_raio_atual(camada, pos_y, diametro_linha_m):
         """
-        CORREÇÃO: Calcula CORRETAMENTE o raio efetivo no centro da linha.
+        Calcula CORRETAMENTE o raio efetivo no centro da linha.
         - camada.diametro_base: diâmetro da base da camada (em metros)
         - pos_y: altura vertical dentro da camada (em metros)
         - diametro_linha_m: diâmetro da linha (em metros)
@@ -28,13 +28,32 @@ class CalculadoraHexagonal:
         return raio_base + pos_y + (diametro_linha_m / 2)
 
     @staticmethod
-    def verificar_colisao(posicao, diametro_linha_m, camada):
-        """Verifica colisões com outras linhas na mesma camada."""
-        for linha in camada.linhas:
-            distancia = math.sqrt(
-                (posicao[0] - linha['posicao'][0])**2 +
-                (posicao[1] - linha['posicao'][1])**2
-            )
-            if distancia < (diametro_linha_m + linha['objeto'].diametro_efetivo/1000)/2:
-                return True
+    def verificar_colisao(posicao, diametro_linha_m, bobina, camada_atual=None):
+        """
+        Verifica colisões com outras linhas em QUALQUER camada próxima.
+        - camada_atual: a camada atual sendo preenchida (None para nova camada)
+        - margem de segurança: 5% do diâmetro para evitar contato físico
+        """
+        margem_seguranca = diametro_linha_m * 0.05
+        raio_linha = diametro_linha_m / 2 + margem_seguranca
+        
+        # Verifica todas as camadas próximas verticalmente
+        for camada in bobina.camadas:
+            # Verifica se é uma camada relevante (próxima)
+            if camada_atual and abs(camada.diametro_base - camada_atual.diametro_base) > 3 * diametro_linha_m:
+                continue
+                
+            for linha in camada.linhas:
+                # Calcula distância entre centros
+                distancia = math.sqrt(
+                    (posicao[0] - linha['posicao'][0])**2 +
+                    (posicao[1] - linha['posicao'][1])**2
+                )
+                
+                # Raio da linha existente (com margem de segurança)
+                raio_existente = linha['objeto'].diametro_efetivo / 2000 + margem_seguranca
+                
+                # Verifica se há sobreposição
+                if distancia < (raio_linha + raio_existente):
+                    return True
         return False

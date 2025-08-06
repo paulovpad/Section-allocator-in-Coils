@@ -24,9 +24,9 @@ class AlocadorBobinas:
             
             # Verifica validações
             if (self.validador.validar_largura(pos_x, diametro_linha_m, bobina) and
-                not self.calculadora.verificar_colisao((pos_x, pos_y), diametro_linha_m, camada)):
+                not self.calculadora.verificar_colisao(
+                    (pos_x, pos_y), diametro_linha_m, bobina, camada):
                 
-                # CORREÇÃO: Chamada atualizada para cálculo do raio
                 raio_atual = self.calculadora.calcular_raio_atual(camada, pos_y, diametro_linha_m)
                 
                 if self.validador.validar_raio_minimo(raio_atual, linha):
@@ -51,6 +51,10 @@ class AlocadorBobinas:
 
         # Verifica se cabe na bobina (validação vertical)
         if (diametro_base + 2 * diametro_linha_m) > bobina.diametro_externo:
+            return False
+
+        # VERIFICAÇÃO DE COLISÃO INTER-CAMADAS (NOVO)
+        if self.calculadora.verificar_colisao((pos_x, pos_y), diametro_linha_m, bobina):
             return False
 
         # Cria e adiciona a camada
