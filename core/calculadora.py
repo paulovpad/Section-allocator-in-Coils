@@ -16,13 +16,20 @@ class CalculadoraHexagonal:
         return pos_x, pos_y
 
     @staticmethod
-    def calcular_raio_atual(bobina, camada, pos_y, diametro_linha_m):
-        """Calcula o raio efetivo da bobina na posição y atual."""
-        return (camada.diametro_base + pos_y + diametro_linha_m/2) / 2
+    def calcular_raio_atual(camada, pos_y, diametro_linha_m):
+        """
+        CORREÇÃO: Calcula CORRETAMENTE o raio efetivo no centro da linha.
+        - camada.diametro_base: diâmetro da base da camada (em metros)
+        - pos_y: altura vertical dentro da camada (em metros)
+        - diametro_linha_m: diâmetro da linha (em metros)
+        """
+        # Converte diâmetro base para raio e soma as alturas
+        raio_base = camada.diametro_base / 2
+        return raio_base + pos_y + (diametro_linha_m / 2)
 
     @staticmethod
     def verificar_colisao(posicao, diametro_linha_m, camada):
-        """Verifica colisões com outras linhas na camada."""
+        """Verifica colisões com outras linhas na mesma camada."""
         for linha in camada.linhas:
             distancia = math.sqrt(
                 (posicao[0] - linha['posicao'][0])**2 +
