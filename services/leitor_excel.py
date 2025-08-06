@@ -2,22 +2,22 @@ import pandas as pd
 from pathlib import Path
 
 class LeitorExcel:
+    """Classe para leitura e processamento de dados de bobinas e linhas a partir de arquivos Excel."""
+
     @staticmethod
     def ler_bobinas(caminho_arquivo):
-        """Versão com tratamento robusto para coluna de peso"""
+        """Lê dados de bobinas com tratamento robusto para colunas."""
         try:
             df = pd.read_excel(caminho_arquivo, sheet_name='Bobinas')
             
-            # Mapeamento de colunas esperadas
             mapeamento = {
                 'ID': ['ID', 'Código'],
                 'Diâmetro Externo (m)': ['Diâmetro Externo (m)', 'DE'],
                 'Diâmetro Interno (m)': ['Diâmetro Interno (m)', 'DI'],
-                'Comprimento (m)': ['Comprimento (m)', 'Comp'],
+                'Largura (m)': ['Largura (m)', 'Largura'],
                 'Peso Máximo (kg)': ['Peso Máximo (kg)', 'Peso Max']
             }
             
-            # Renomear colunas
             colunas_renomear = {}
             for padrao, alternativas in mapeamento.items():
                 for alternativa in alternativas:
@@ -33,13 +33,13 @@ class LeitorExcel:
 
     @staticmethod
     def ler_linhas(caminho_arquivo):
-        """Lê dados da aba 'Linhas' com tratamento flexível"""
+        """Lê dados de linhas com tratamento flexível para colunas."""
         try:
             df = pd.read_excel(caminho_arquivo, sheet_name='Linhas')
             
             mapeamento = {
                 'ID': ['ID', 'Código'],
-                'Diâmetro (m)': ['Diâmetro (m)', 'Diametro'],
+                'Diâmetro (mm)': ['Diâmetro (mm)', 'Diametro'],
                 'Comprimento Necessário (m)': ['Comprimento Necessário (m)', 'Comp Necessario'],
                 'Peso por Metro (kg/m)': ['Peso por Metro (kg/m)', 'Peso Unitario'],
                 'Raio Mínimo (m)': ['Raio Mínimo (m)', 'Raio Min']
@@ -53,6 +53,12 @@ class LeitorExcel:
                         break
             
             df = df.rename(columns=colunas_renomear)
+            
+            # Conversão de mm para m
+            if 'Diâmetro (mm)' in df.columns:
+                df['Diâmetro (m)'] = df['Diâmetro (mm)'] / 1000
+                df = df.drop(columns=['Diâmetro (mm)'])
+            
             return df.to_dict('records')
             
         except Exception as e:
@@ -60,24 +66,65 @@ class LeitorExcel:
 
     @staticmethod
     def calcular_camadas(bobina, linhas_alocadas):
-        """Calcula a disposição física das linhas na bobina"""
-        linhas_ordenadas = sorted(linhas_alocadas, 
-                                key=lambda x: x['Diâmetro (m)'], 
-                                reverse=True)
+        """Calcula a disposição física das linhas na bobina com validação de espaço."""
+        linhas_ordenadas = sorted(
+            linhas_alocadas, 
+            key=lambda x: x['Diâmetro (m)'], 
+            reverse=True
+        )
         
         camadas = []
-        raio_atual = bobina['Diâmetro Interno (m)'] / 2
+        altura_acumulada = 0
+        diametro_interno = bobina['Diâmetro Interno (m)']
+        diametro_externo = bobina['Diâmetro Externo (m)']
         
         for i, linha in enumerate(linhas_ordenadas, 1):
+            diam_linha = linha['Diâmetro (m)']
+            
+            # Verificação de espaço disponível
+            diametro_final = diametro_interno + 2 * (altura_acumulada + diam_linha)
+            if diametro_final > diametro_externo:
+                print(f"⚠️ Linha {linha['ID']} não cabe - Diâmetro final seria {diametro_final:.3f}m (limite: {diametro_externo}m)")
+                continue
+                
+            raio_interno = diametro_interno/2 + altura_acumulada
+            raio_externo = raio_interno + diam_linha
+            
             camada = {
                 'Camada': i,
                 'Linha ID': linha['ID'],
-                'Diâmetro': linha['Diâmetro (m)'],
-                'Raio Interno': raio_atual,
-                'Raio Externo': raio_atual + linha['Diâmetro (m)'],
-                'Comprimento': linha['Comprimento Necessário (m)']
+                'Diâmetro': diam_linha,
+                'Raio Interno': raio_interno,
+                'Raio Externo': raio_externo,
+                'Comprimento': linha['Comprimento Necessário (m)'],
+                'Peso por Metro (kg/m)': linha['Peso por Metro (kg/m)']
             }
+            
             camadas.append(camada)
-            raio_atual += linha['Diâmetro (m)']
+            altura_acumulada += diam_linha
         
         return camadas
+
+    @staticmethod
+    def calcular_resumo(bobina, camadas):
+        """Calcula métricas de utilização da bobina."""
+        if not camadas:
+            return {
+                'peso_total': 0,
+                'diametro_final': bobina['Diâmetro Interno (m)'],
+                'espaco_utilizado': 0
+            }
+        
+        peso_total = sum(
+            camada['Comprimento'] * camada['Peso por Metro (kg/m)']
+            for camada in camadas
+        )
+        
+        diametro_final = camadas[-1]['Raio Externo'] * 2
+        espaco_utilizado = diametro_final / bobina['Diâmetro Externo (m)']
+        
+        return {
+            'peso_total': peso_total,
+            'diametro_final': diametro_final,
+            'espaco_utilizado': espaco_utilizado
+        }
