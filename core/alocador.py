@@ -25,7 +25,7 @@ class AlocadorBobinas:
             # Verifica validações
             if (self.validador.validar_largura(pos_x, diametro_linha_m, bobina) and
                 not self.calculadora.verificar_colisao(
-                    (pos_x, pos_y), diametro_linha_m, bobina, camada):
+                    (pos_x, pos_y), diametro_linha_m, bobina, camada)):
                 
                 raio_atual = self.calculadora.calcular_raio_atual(camada, pos_y, diametro_linha_m)
                 
