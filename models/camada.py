@@ -1,14 +1,15 @@
 class Camada:
     """Representa uma camada de linhas na bobina."""
     
-    def __init__(self, diametro_base):
+    def __init__(self, diametro_base, tipo='hexagonal'):
         self.diametro_base = diametro_base
         self.linhas = []
         self.altura_camada = 0
         self.largura_ocupada = 0
+        self.tipo = tipo
     
     def adicionar_linha(self, linha, pos_x, pos_y):
-        """Adiciona uma linha na posição especificada."""
+        """Adiciona uma linha na posição especificada"""
         self.linhas.append({
             'objeto': linha,
             'posicao': (pos_x, pos_y)
@@ -16,7 +17,17 @@ class Camada:
         self._atualizar_dimensoes(linha, pos_x, pos_y)
     
     def _atualizar_dimensoes(self, linha, pos_x, pos_y):
-        """Atualiza altura e largura da camada."""
+        """Atualiza altura e largura da camada"""
         diametro_m = linha.diametro_efetivo / 1000
-        self.altura_camada = max(self.altura_camada, pos_y + diametro_m/2)
-        self.largura_ocupada = max(self.largura_ocupada, abs(pos_x) + diametro_m/2)
+        
+        # Altura é o ponto mais alto da linha nesta camada
+        self.altura_camada = max(
+            self.altura_camada, 
+            pos_y + diametro_m/2
+        )
+        
+        # Largura é o ponto mais afastado do centro
+        self.largura_ocupada = max(
+            self.largura_ocupada, 
+            abs(pos_x) + diametro_m/2
+        )
