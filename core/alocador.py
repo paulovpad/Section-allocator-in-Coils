@@ -39,23 +39,16 @@ class AlocadorBobinas:
         half = largura / 2.0
         x = x_ini
         if lado == 'esquerda':
-            # avança para +x
             while x + passo / 2.0 <= half + 1e-12:
                 yield x
                 x += passo
         else:
-            # avança para -x
             while x - passo / 2.0 >= -half - 1e-12:
                 yield x
                 x -= passo
 
     # ---------- Simulação para escolher o lado ----------
     def _simular_lado(self, lado, bobina, camada_index, linhas_pendentes, k_lookahead=10):
-        """
-        Simula preencher o início da 'camada_index' começando por 'lado' (esquerda/direita),
-        usando até k_lookahead próximas linhas (diâmetros possivelmente diferentes).
-        Retorna (qtde_colocadas, sobra_largura_estimada).
-        """
         if not linhas_pendentes:
             return 0, bobina.largura
 
@@ -63,7 +56,6 @@ class AlocadorBobinas:
         pos_y = (camada_index - 1) * self._pitch(d_ref)
         offset = self._offset_colmeia(camada_index, d_ref)
 
-        # passo base inclui margem de colisão (duas metades + margens)
         margem = d_ref * self.calculadora.MARGEM_FRAC
         passo = d_ref + 2.0 * margem
 
@@ -75,7 +67,6 @@ class AlocadorBobinas:
         while usados < min(k_lookahead, len(linhas_pendentes)):
             L = linhas_pendentes[usados]
             d = L.diametro_efetivo / 1000.0
-            # passo dinâmico: considere o diâmetro atual
             margem_local = d * self.calculadora.MARGEM_FRAC
             passo_local = d + 2.0 * margem_local
 
@@ -88,12 +79,14 @@ class AlocadorBobinas:
             # raio mínimo
             if not self.validador.validar_raio_minimo(self.calculadora.calcular_raio_efetivo(x_cursor, pos_y), L):
                 break
+            # volume (global): se não cabe em volume, nem adianta seguir
+            if not self.validador.validar_volume(bobina, L):
+                break
 
             colocadas += 1
             usados += 1
             x_cursor = x_cursor + (passo_local if lado == 'esquerda' else -passo_local)
 
-        # sobra aproximada do lado oposto
         if colocadas == 0:
             sobra = bobina.largura
         else:
@@ -105,10 +98,6 @@ class AlocadorBobinas:
         return colocadas, max(0.0, sobra)
 
     def _escolher_lado(self, bobina, camada_index, linhas_pendentes):
-        """
-        Escolhe o lado que permite colocar mais itens no começo da camada.
-        Em empate, escolhe o de menor sobra de largura.
-        """
         c_esq, s_esq = self._simular_lado('esquerda', bobina, camada_index, linhas_pendentes)
         c_dir, s_dir = self._simular_lado('direita',  bobina, camada_index, linhas_pendentes)
         if c_esq > c_dir:
@@ -119,15 +108,14 @@ class AlocadorBobinas:
 
     # ---------- Alocação efetiva ----------
     def _tentar_adicionar_linha_na_camada(self, linha, camada, bobina):
-        """
-        Tenta adicionar uma linha na camada informada:
-        - decide dinamicamente a lateral de início;
-        - preenche horizontalmente (lado -> centro) respeitando largura, colisão e raio mínimo.
-        """
-        d = linha.diametro_efetivo / 1000.0  # mm -> m
+        """Tenta adicionar uma linha na camada informada, respeitando também a capacidade de volume."""
+        # guarda de volume global: se não cabe em volume, nem tenta posições
+        if not self.validador.validar_volume(bobina, linha):
+            return False
+
+        d = linha.diametro_efetivo / 1000.0  # mm -> m (para geometria/colisão)
         camada_index = bobina.camadas.index(camada) + 1
 
-        # escolha do lado usando a própria linha (ou poderia passar um slice das próximas)
         lado = self._escolher_lado(bobina, camada_index, [linha])
 
         pos_y = (camada_index - 1) * self._pitch(d)
@@ -137,7 +125,7 @@ class AlocadorBobinas:
         x_ini = (-half + offset + d / 2.0) if lado == 'esquerda' else (half - offset - d / 2.0)
 
         margem = d * self.calculadora.MARGEM_FRAC
-        passo = d + 2.0 * margem  # garante não-colisão entre iguais
+        passo = d + 2.0 * margem
 
         for pos_x in self._seq_horizontal(lado, x_ini, bobina.largura, passo):
             if not self.validador.validar_largura(pos_x, d, bobina):
@@ -148,18 +136,21 @@ class AlocadorBobinas:
             if not self.validador.validar_raio_minimo(raio_atual, linha):
                 continue
 
+            # passou: adiciona
             camada.adicionar_linha(linha, pos_x, pos_y)
-            # Atualiza o peso também quando adiciona em camada existente
+            # atualiza peso e volume por linha adicionada em camada existente
             bobina.peso_atual_ton += linha.peso_ton
+            bobina.adicionar_volume_linha(linha)
             return True
 
         return False
 
     def _tentar_criar_nova_camada(self, linha, bobina):
-        """
-        Cria nova camada (se couber em DE) e inicia pela lateral escolhida dinamicamente.
-        Coloca a primeira linha e adiciona a camada na bobina.
-        """
+        """Cria nova camada e coloca a primeira linha, respeitando também a capacidade de volume."""
+        # guarda de volume global
+        if not self.validador.validar_volume(bobina, linha):
+            return False
+
         d = linha.diametro_efetivo / 1000.0
         camada_index = len(bobina.camadas) + 1
         pos_y = (camada_index - 1) * self._pitch(d)
@@ -193,7 +184,8 @@ class AlocadorBobinas:
                 continue
 
             nova.adicionar_linha(linha, pos_x, pos_y)
-            bobina.adicionar_camada(nova)  # soma o peso da camada criada
+            # aqui NÃO somamos manualmente peso/volume; bobina.adicionar_camada cuidará disso
+            bobina.adicionar_camada(nova)
             return True
 
         return False
