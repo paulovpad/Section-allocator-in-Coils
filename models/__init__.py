@@ -1,4 +1,4 @@
-"""Modelos de dados do sistema."""
+# models/__init__.py
 from .bobina import Bobina
 from .linha import Linha
 from .camada import Camada

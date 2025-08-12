@@ -1,6 +1,5 @@
-"""Lógica principal de alocação."""
-from .alocador import AlocadorBobinas
-from .calculadora import CalculadoraHexagonal
+# core/__init__.py
+from .alocador_bobinagem import AlocadorBobinagemReal
 from .validador import ValidadorAlocacao
 
-__all__ = ['AlocadorBobinas', 'CalculadoraHexagonal', 'ValidadorAlocacao']
+__all__ = ["AlocadorBobinagemReal", "ValidadorAlocacao"]

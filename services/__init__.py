@@ -1,4 +1,4 @@
-from .entrada_dados import EntradaDados
+# services/__init__.py
 from .relatorio import Relatorio
 
-__all__ = ['EntradaDados', 'Relatorio']
+__all__ = ['Relatorio']

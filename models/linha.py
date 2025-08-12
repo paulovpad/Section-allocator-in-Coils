@@ -1,3 +1,4 @@
+# models/linha.py
 class Linha:
     """Representa uma linha/cabo a ser armazenado na bobina."""
     
@@ -5,26 +6,26 @@ class Linha:
         1: 1.0, 2: 0.9, 3: 0.75, 4: 0.6, 5: 0.45, 6: 0.3, 7: 0.15
     }
     
-    def __init__(self, codigo, diametro, comprimento, peso_por_metro_kg, raio_minimo_m):  # Adicione codigo aqui
-        self.codigo = codigo  # Código único de identificação
-        self.diametro = diametro  # em mm
-        self.comprimento = comprimento  # em m
+    def __init__(self, codigo, diametro, comprimento, peso_por_metro_kg, raio_minimo_m):
+        self.codigo = codigo              # ID único
+        self.diametro = diametro          # em mm (DIÂMETRO REAL)
+        self.comprimento = comprimento    # em m (comprimento total disponível)
         self.peso_por_metro_kg = peso_por_metro_kg
         self.raio_minimo_m = raio_minimo_m
         self.flexibilidade = self._calcular_flexibilidade()
     
     @property
     def peso_ton(self):
-        """Peso total da linha em toneladas."""
+        """Peso total da linha em toneladas (para referência)."""
         return (self.peso_por_metro_kg * self.comprimento) * 0.001
     
     @property
     def diametro_efetivo(self):
-        """Diâmetro ajustado pela flexibilidade."""
+        """Diâmetro 'efetivo' ajustado pela flexibilidade (compat; não usado no modelo real)."""
         return self.diametro * self.FLEXIBILIDADE_FATORES.get(self.flexibilidade, 1.0)
     
     def _calcular_flexibilidade(self):
-        """Calcula o nível de flexibilidade com base no raio mínimo."""
+        """Estimativa de flexibilidade com base no raio mínimo."""
         razao = self.raio_minimo_m / (self.diametro / 1000)
         if razao <= 1.5: return 7
         elif razao <= 2.5: return 6
