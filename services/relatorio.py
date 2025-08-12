@@ -1,3 +1,4 @@
+# services/relatorio.py
 import math
 
 class Relatorio:
@@ -14,47 +15,63 @@ class Relatorio:
         if not bobinas:
             print("\nNenhuma bobina foi utilizada.")
             return
-            
+
         print("\n=== BOBINAS UTILIZADAS ===")
         for i, bobina in enumerate(bobinas, 1):
             print(f"\nBobina {i}:")
             print(f"DE={bobina.diametro_externo}m, DI={bobina.diametro_interno}m, Largura={bobina.largura}m")
-            print(f"Peso máximo: {bobina.peso_maximo_ton:.1f} ton | Peso usado: {bobina.peso_atual_ton:.1f} ton")
-            print(f"Ocupação volumétrica: {self._calcular_ocupacao(bobina)*100:.1f}%")
-            
+            # 2 casas para não arredondar 0.46 para 0.5
+            print(f"Peso máximo: {bobina.peso_maximo_ton:.2f} ton | Peso usado: {bobina.peso_atual_ton:.2f} ton")
+
+            # ---- Cálculo físico correto de volume ----
+            v_total = (math.pi / 4.0) * (bobina.diametro_externo**2 - bobina.diametro_interno**2) * bobina.largura
+            v_cap = v_total * getattr(bobina, "fator_empacotamento", 1.0)
+
+            # Soma do volume real dos cabos (cilindros): pi*(d/2)^2 * comprimento
+            v_linhas = 0.0
+            vistos = set()
+            for camada in bobina.camadas:
+                for reg in camada.linhas:
+                    L = reg['objeto']
+                    key = getattr(L, "codigo", id(L))
+                    if key in vistos:
+                        continue
+                    vistos.add(key)
+                    d_real_m = L.diametro / 1000.0  # mm -> m (diâmetro físico)
+                    v_linhas += math.pi * (d_real_m / 2.0) ** 2 * L.comprimento
+
+            ocup = (v_linhas / v_cap) if v_cap > 0 else 0.0
+            ocup = min(1.0, max(0.0, ocup))
+
+            print(f"Ocupação volumétrica (efetiva): {ocup*100:.1f}%")
+            print(f"Volume útil: {v_total:.3f} m³ | Capacidade (× fator): {v_cap:.3f} m³ | Linhas: {v_linhas:.3f} m³")
+
+            # Detalhe por camada/linha
             for j, camada in enumerate(bobina.camadas, 1):
                 print(f"\n  Camada {j} (Base: {camada.diametro_base:.3f}m):")
-                for k, linha in enumerate(camada.linhas, 1):
-                    print(f"    Flexível {k}: Cód. {linha['objeto'].codigo}")
-                    print(f"      Diâmetro: {linha['objeto'].diametro}mm × {linha['objeto'].comprimento}m")
-                    print(f"      Posição: X={linha['posicao'][0]:.3f}m, Y={linha['posicao'][1]:.3f}m")
-                    print(f"      Peso: {linha['objeto'].peso_ton:.3f} ton | Flexibilidade: {linha['objeto'].flexibilidade}")
-
-    def _calcular_ocupacao(self, bobina):
-        volume_total = (math.pi/4) * (bobina.diametro_externo**2 - bobina.diametro_interno**2) * bobina.largura
-        volume_ocupado = sum(
-            (math.pi/4) * ((camada.diametro_base + camada.altura_camada)**2 - camada.diametro_base**2) * 
-            camada.largura_ocupada * (math.sqrt(3)/2)
-            for camada in bobina.camadas
-        )
-        return volume_ocupado / volume_total if volume_total > 0 else 0
+                for k, reg in enumerate(camada.linhas, 1):
+                    L = reg['objeto']
+                    x, y = reg['posicao']
+                    print(f"    Flexível {k}: Cód. {L.codigo}")
+                    print(f"      Diâmetro: {L.diametro:.1f}mm × {L.comprimento:.1f}m")
+                    print(f"      Posição: X={x:.3f}m, Y={y:.3f}m")
+                    print(f"      Peso: {L.peso_ton:.3f} ton | Flexibilidade: {L.flexibilidade}")
 
     def _mostrar_linhas_nao_alocadas(self, linhas):
         if not linhas:
             print("\nTodos os flexíveis foram alocados com sucesso!")
             return
-            
+
         print("\n=== FLEXÍVEIS NÃO ALOCADOS ===")
         print(f"Total: {len(linhas)} flexíveis não puderam ser alocados")
-        for i, linha in enumerate(linhas[:5], 1):
+        for i, L in enumerate(linhas[:5], 1):
             print(f"\nFlexível {i}:")
-            print(f"Código: {linha.codigo}")
-            print(f"Diâmetro: {linha.diametro}mm")
-            print(f"Comprimento: {linha.comprimento}m")
-            print(f"Peso: {linha.peso_ton:.3f} ton")
-            print(f"Flexibilidade: {linha.flexibilidade}")
-            print(f"Raio mínimo: {linha.raio_minimo_m}m")
-        
+            print(f"Código: {L.codigo}")
+            print(f"Diâmetro: {L.diametro}mm")
+            print(f"Comprimento: {L.comprimento}m")
+            print(f"Peso: {L.peso_ton:.3f} ton")
+            print(f"Flexibilidade: {L.flexibilidade}")
+            print(f"Raio mínimo: {L.raio_minimo_m}m")
         if len(linhas) > 5:
             print(f"\n... e mais {len(linhas) - 5} flexíveis não alocados")
 
@@ -62,7 +79,7 @@ class Relatorio:
         bobinas_utilizadas = len(resultado['bobinas_utilizadas'])
         linhas_nao_alocadas = len(resultado['linhas_nao_alocadas'])
         linhas_alocadas = sum(len(camada.linhas) for bobina in resultado['bobinas_utilizadas'] for camada in bobina.camadas)
-        
+
         print("\n=== RESUMO FINAL ===")
         print(f"Bobinas utilizadas: {bobinas_utilizadas}")
         print(f"Flexíveis alocados: {linhas_alocadas}")
