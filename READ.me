@@ -1,64 +1,118 @@
 # 🌀 Sistema de Alocação de Linhas em Bobinas
 
-Otimize o armazenamento de cabos flexíveis em bobinas industriais usando empacotamento hexagonal inteligente!
+1) Objetivo do algoritmo
 
-## 🚀 Funcionalidades Principais
-- Alocação automática de linhas/cabos em bobinas
-- Cálculo de posicionamento hexagonal otimizado
-- Validação de restrições físicas (peso, raio mínimo, colisões)
-- Geração de relatórios detalhados de alocação
-- Entrada de dados via Excel ou interface interativa
+O sistema aloca um conjunto de linhas/flexíveis em uma ou mais bobinas, buscando aproveitar ao máximo a capacidade física de cada bobina e respeitando todos os limites operacionais:
+Geometria: diâmetro interno (DI), diâmetro externo (DE) e largura útil da bobina;
+Física: limite de peso (kg/ton) e volume efetivo (com fator de empacotamento);
+Linha: diâmetro (mm), comprimento necessário (m), peso por metro (kg/m) e raio mínimo (m).
+O resultado final é um plano de bobinagem por camadas que indica, para cada camada, quais linhas entraram, quantas faixas (voltas) foram alocadas e quantos metros foram consumidos.
 
-## ⚙️ Instalação
-```bash
-# Clone o repositório
-git clone https://github.com/seu-usuario/alocador-bobinas.git
+2) Modelo de Camada (o que é uma “faixa”)
 
-# Acesse o diretório
-cd alocador-bobinas
+A bobinagem acontece em camadas radiais (anéis concêntricos). Dentro de uma camada, a linha ocupa a largura em “faixas” paralelas (também chamadas de “voltas” no relatório).
+Cada faixa corresponde a uma volta completa daquela linha em um raio médio da camada.
 
-# Instale as dependências
-pip install -r requirements.txt
+Definições principais (para linha com diâmetro d):
 
-Explicação do algoritmo:
+Diâmetro real (m): d = diametro_mm / 1000
 
-# Resumo
+Passo de largura (m):
+passo = d * (1 + 2*MARGEM_FRAC)
+(a folga MARGEM_FRAC é aplicada dos dois lados; ex.: 5% → fator 1,10)
 
-"Nosso algoritmo prioriza cabos menos flexíveis, mais grossos e com maior razão raio/diâmetro, garantindo que os mais sensíveis sejam alocados primeiro nas posições mais
- seguras. Isso otimiza espaço, evita danos e reduz custos."
+Raio médio (m):
+r_mid = r_base + d/2
+(r_base é o raio da superfície interna da camada)
 
-# Visão Geral
+Comprimento por faixa (m):
+C = 2π * r_mid
 
-O sistema tem como objetivo alocar linhas (cabos/fios) em bobinas usando um padrão de empacotamento hexagonal. O código está organizado em módulos:
-- core: Contém a lógica principal de alocação (`alocador.py`), cálculos geométricos (`calculadora.py`) e validações (`validador.py`).
-- models: Define as classes `Bobina`, `Linha` e `Camada`.
-- services: Responsável pela entrada de dados (via Excel ou interativa) e geração de relatórios.
-- main.py: Ponto de entrada do programa.
+A capacidade teórica de faixas se a camada fosse só dessa linha é:
+voltas_capacidade = floor(largura_bobina / passo).
 
-# Funcionamento do Algoritmo de Alocação
+3) Restrições verificadas para cada linha na camada
 
-O coração do sistema está na classe `AlocadorBobinas` (em `alocador.py`). O método principal é `alocar(linhas, bobinas)`, que tenta alocar as linhas nas bobinas seguindo estas etapas:
+Uma linha só pode contribuir faixas na camada se todas as condições abaixo forem verdadeiras:
 
-1. Ordenação das linhas e bobinas**:
-   - As linhas são ordenadas por prioridade: flexibilidade (quanto maior a flexibilidade, menor o fator de redução do diâmetro), diâmetro decrescente e razão entre raio mínimo e diâmetro.
-   - As bobinas são ordenadas por capacidade (volume disponível) decrescente.
+Geometria DE: ao usar essa linha na camada, a espessura da camada não pode ultrapassar o DE:
+2 * (r_base + d) ≤ DE.
 
-2. Tentativa de alocação de cada linha**:
-   - Para cada linha, tenta alocar em uma das bobinas (na ordem de capacidade).
-   - Em cada bobina, tenta:
-     a. Adicionar a linha na última camada existente (usando empacotamento hexagonal).
-     b. Se não for possível, cria uma nova camada na bobina.
+Raio mínimo: o raio médio da camada para essa linha precisa atender o raio_minimo_m:
+r_mid ≥ raio_minimo_m.
 
-3. Adicionar linha em uma camada existente** (`_tentar_adicionar_linha_na_camada`):
-   - Calcula posições hexagonais iterativamente (até um limite baseado na largura da bobina).
-   - Alterna o lado inicial (esquerda/direita) a cada camada para otimizar o espaço.
-   - Para cada posição candidata, verifica:
-     - Largura: se a linha cabe na bobina.
-     - Colisão: se não há sobreposição com outras linhas na mesma camada.
-     - Raio mínimo: se o raio efetivo naquela posição é suficiente para a linha.
+Comprimento remanescente da linha:
+Cada faixa consome C metros; então o teto por remanescente é floor(rem / C).
 
-4. Criar uma nova camada** (`_tentar_criar_nova_camada`):
-   - Define a posição inicial na borda da bobina (alternando o lado a cada camada).
-   - Calcula o diâmetro base da nova camada (baseado na camada anterior, se houver, ou no diâmetro interno da bobina).
-   - Verifica se a camada cabe no diâmetro externo da bobina.
-   - Adiciona a linha na nova camada.
+Peso e volume restantes da bobina:
+O validador fornece max_comprimento_por_peso(bobina, linha) e max_comprimento_por_volume(bobina, linha).
+Convertendo esses comprimentos para faixas:
+floor(max_peso / C) e floor(max_volume / C).
+
+Limite efetivo de faixas para a linha na camada:
+qtd_max = min( por_remanescente, por_peso, por_volume ).
+
+Obs.: a largura da bobina atua como capacidade global na etapa da mochila (ver abaixo).
+
+4) Seleção ótima por camada — Mochila inteira (Knapsack)
+
+Para decidir quantas faixas de cada linha entram nesta camada, resolvemos um bounded knapsack:
+Capacidade (W): a largura da bobina, discretizada em milímetros (largura_m * 1000), para ganhar precisão em centímetros/milímetros.
+Item: 1 faixa de uma linha específica.
+peso do item = passo * 1000 (mm de largura que consome);
+valor do item = por padrão o mesmo (passo * 1000), ou seja, maximizar largura ocupada.
+Disponibilidade por linha: até qtd_max cópias do item (faixas) daquela linha, limitado por remanescente, peso e volume.
+
+DP 1D clássica:
+dp[w] = melhor valor (largura ocupada) com capacidade w mm;
+keep[w] guarda o caminho (qual item/cópia foi usado).
+Percorremos os itens e, no fim, reconstruímos a solução ótima com keep, obtendo quantas faixas de cada linha entram na camada para ocupar a maior largura possível.
+Desempate opcional (sem mexer nas restrições):
+Podemos somar um pequeno termo ao valor do item para priorizar mais comprimento alocado ou reduzir a sobra das linhas em empates de largura, mantendo o objetivo principal (largura) sempre dominante.
+
+5) Construção da camada e avanço radial
+
+Com a combinação ótima em mãos:
+
+Para cada linha selecionada:
+
+voltas_usadas = número de faixas escolhidas na DP;
+comprimento_alocado = voltas_usadas * C;
+Registramos na Camada (camada.adicionar_linha(...)) os campos que alimentam o relatório: voltas_usadas, voltas_capacidade, passo, pos_y (r_mid), lado, comprimento_alocado.
+Espessura da camada: é o maior diâmetro (m) entre as linhas usadas nessa camada.
+Atualizamos o raio base: r_base += max_diâmetro_usado.
+Repetimos o processo de nova camada enquanto:
+houver linhas com remanescente, e
+2 * r_base ≤ DE (não estouramos o diâmetro externo).
+
+6) Saída e relatório
+
+O relatório por bobina apresenta:
+
+Peso usado vs. permitido, e ocupação volumétrica (com fator de empacotamento);
+Para cada camada:
+Diâm. de base (2 × r_base do início da camada),
+Largura usada vs largura total,
+Para cada linha: diâmetro, comprimento alocado, voltas usadas/capacidade, passo, lado,
+% de largura não utilizada (sobra);
+Linhas não totalmente alocadas (remanescente > 0);
+Resumo final (quantidade de bobinas, alocações, etc.).
+
+7) Parâmetros e ajustes finos
+
+MARGEM_FRAC (padrão 0,05): folga lateral entre faixas.
+Aumentar → menos faixas cabem por camada; Diminuir → mais faixas (menos folga).
+Desempate da mochila (opcional):
+Padrão: valor = largura;
+Largura + Comprimento: valor = largura_mm * 1e6 + comprimento_mm (prioriza mais metros sem perder o ótimo de largura);
+Largura + Balanceamento: valor = largura_mm * 1e6 + f(sobra) para reduzir remanescentes “grandes” primeiro.
+Esses ajustes não violam a física (peso/volume/DE/raio continuam sendo checados para cada faixa), apenas mudam a preferência em empates de ocupação.
+
+8) Por que o algoritmo é eficiente e condizente com a realidade
+
+Maximiza a ocupação da largura em cada camada (menos “buracos”);
+Mistura linhas apenas quando isso melhora a ocupação ou permite alocar mais metros sem violar limites;
+Respeita peso e volume por faixa (com base em comprimento real pela circunferência);
+Respeita DE e raio mínimo antes de cada alocação;
+Espessura conservadora da camada (maior diâmetro usado) mantém a coerência geométrica;
+Estável: pequenas variações no input não geram soluções “esdrúxulas”.
