@@ -1,43 +1,48 @@
 # core/alocador_bobinagem.py
+"""
+Orquestração da bobinagem por camadas:
+- Monta itens elegíveis por camada (por linha)
+- Resolve knapsack para escolher faixas
+- Registra geometricamente a camada e avança o raio
+"""
+
+from __future__ import annotations
 import math
+from typing import Dict, List
+
 from core.validador import ValidadorAlocacao
 from models import Camada
+from core.selecionador_faixas import ItemFaixa, selecionar_faixas
+from core.geometria_camadas import registrar_na_camada
+from core.restricoes import checar_elegibilidade, limites_por_linha
+from core.objetivos import valor_largura_comprimento  # escolha padrão do objetivo
 
 class AlocadorBobinagemReal:
     """
-    Bobinagem real por camadas radiais com alocação eficiente:
-    em cada camada, escolhe-se a combinação de faixas (tracks) que
-    maximiza a largura ocupada (mochila inteira), respeitando:
-      • Peso e Volume máximos da bobina
-      • Limites geométricos DI/DE
-      • Raio mínimo de cada linha
-    A espessura da camada é o MAIOR diâmetro real usado nela.
+    Bobinagem por camadas radiais com seleção ótima (knapsack) e
+    registro geométrico consistente.
+    A espessura de cada camada é o MAIOR diâmetro usado nela.
     """
 
-    # parâmetros do algoritmo
-    MARGEM_FRAC = 0.05   # folga lateral entre faixas (fração do diâmetro)
+    MARGEM_FRAC = 0.05
     EPS = 1e-9
 
     # ---------- helpers de unidade e geometria ----------
     @staticmethod
     def _d_real_m(linha) -> float:
-        """Diâmetro real da linha em metros (no Excel costuma vir em mm)."""
+        """Diâmetro real da linha em metros (entrada geralmente em mm)."""
         try:
             return float(getattr(linha, "diametro", 0.0) or 0.0) / 1000.0
         except Exception:
             return 0.0
 
     def _passo(self, d_m: float) -> float:
-        """Passo efetivo na largura p/ uma faixa dessa linha."""
+        """Passo efetivo na largura para uma faixa dessa linha."""
         return d_m * (1.0 + 2.0 * self.MARGEM_FRAC)
 
     @staticmethod
     def _circ(r_m: float) -> float:
         return 2.0 * math.pi * r_m
-
-    @staticmethod
-    def _peso_m(L) -> float:
-        return float(getattr(L, "peso_por_metro_kg", 0.0) or 0.0)
 
     @staticmethod
     def _comprimento(L) -> float:
@@ -46,15 +51,18 @@ class AlocadorBobinagemReal:
     # ---------- algoritmo principal ----------
     def alocar_em_bobina(self, bobina, linhas):
         """
-        Aloca 'linhas' em 'bobina' camada a camada resolvendo, em cada camada,
-        um problema de mochila inteira (bounded knapsack) que maximiza a
-        largura ocupada por faixas, respeitando DE, raio mínimo, peso e volume.
+        Aloca 'linhas' na 'bobina' camada a camada:
+          1) cataloga faixas elegíveis,
+          2) resolve knapsack para maximizar a largura ocupada,
+          3) registra camada e avança o raio.
+        Retorna: (bobina, linhas_nao_alocadas)
         """
         EPS = self.EPS
 
-        # Ordene por criticidade: maior diâmetro, menor raio_min, maior peso total
+        # Ordena linhas por criticidade (ajuda levemente a estabilidade)
         def _peso_total(L):
-            return self._peso_m(L) * self._comprimento(L)
+            kgpm = float(getattr(L, "peso_por_metro_kg", 0.0) or 0.0)
+            return kgpm * self._comprimento(L)
 
         linhas_ord = sorted(
             list(linhas),
@@ -65,166 +73,117 @@ class AlocadorBobinagemReal:
             )
         )
 
-        # Estado radial e dimensões da bobina
-        r_atual = float(getattr(bobina, "diametro_interno", 0.0) or 0.0) / 2.0
-        de_total = float(getattr(bobina, "diametro_externo", 0.0) or 0.0)
+        # Estado radial e dimensões
+        r_base_m = float(getattr(bobina, "diametro_interno", 0.0) or 0.0) / 2.0
+        de_total_m = float(getattr(bobina, "diametro_externo", 0.0) or 0.0)
         largura_m = float(getattr(bobina, "largura", 0.0) or 0.0)
 
         # Remanescente por linha (m)
-        rem = {id(L): self._comprimento(L) for L in linhas_ord}
+        rem: Dict[int, float] = {id(L): self._comprimento(L) for L in linhas_ord}
 
         val = ValidadorAlocacao()
         lado_inicio = "esquerda"
-        linhas_nao = []
+        linhas_nao: List[object] = []
 
         # Loop de camadas
         while True:
-            # parar se acabou ou atingiu DE
+            # terminou ou sem espaço radial?
             if all(rem[id(L)] <= EPS for L in linhas_ord):
                 break
-            if (2.0 * r_atual) >= (de_total - EPS):
+            if (2.0 * r_base_m) >= (de_total_m - EPS):
+                break
+            if largura_m <= EPS:
                 break
 
-            # Monta "catálogo" de tipos elegíveis nesta camada
-            tipos = []
-            for idx, L in enumerate(linhas_ord):
-                if rem[id(L)] <= EPS:
-                    continue
-                d = self._d_real_m(L)
-                if d <= EPS:
-                    continue
-                # DE com esta linha nesta camada
-                if 2.0 * (r_atual + d) > de_total + EPS:
-                    continue
-                r_mid = r_atual + d / 2.0
-                # raio mínimo
-                if r_mid + EPS < float(getattr(L, "raio_minimo_m", 0.0) or 0.0):
+            # Monta catálogo de itens elegíveis
+            itens: List[ItemFaixa] = []
+            props: Dict[object, tuple] = {}  # props[linha] = (r_mid, comp_por_faixa, passo)
+
+            for L in linhas_ord:
+                rem_L = rem[id(L)]
+                if rem_L <= EPS:
                     continue
 
-                p = self._passo(d)     # consumo de largura por faixa (m)
-                C = self._circ(r_mid)  # consumo de comprimento por faixa (m)
-                if p <= EPS or C <= EPS:
+                d_m = self._d_real_m(L)
+                if d_m <= EPS:
                     continue
 
-                # Limites de faixas por: remanescente, peso e volume.
-                max_by_rem = int(math.floor(rem[id(L)] / C))
-                max_len_peso = val.max_comprimento_por_peso(bobina, L)   # m
-                max_by_peso = int(math.floor(max_len_peso / C))
-                max_len_vol = val.max_comprimento_por_volume(bobina, L)  # m
-                max_by_vol  = int(math.floor(max_len_vol / C))
+                r_mid_m = checar_elegibilidade(bobina, L, r_base_m, d_m, de_total_m)
+                if r_mid_m is None:
+                    continue
 
-                qtd_max = max(0, min(max_by_rem, max_by_peso, max_by_vol))
+                passo_m = self._passo(d_m)
+                comp_por_faixa_m = self._circ(r_mid_m)
+
+                qtd_max = limites_por_linha(
+                    bobina=bobina,
+                    linha=L,
+                    comp_por_faixa_m=comp_por_faixa_m,
+                    rem_linha_m=rem_L,
+                    validador=val
+                )
                 if qtd_max <= 0:
                     continue
 
-                tipos.append({
-                    "idx": idx,
-                    "L": L,
-                    "d_m": d,
-                    "r_mid": r_mid,
-                    "passo": p,
-                    "compr_por_faixa": C,
-                    "qtd_max": qtd_max
-                })
-
-            if not tipos:
-                # ninguém cabe nesta camada com o raio atual
-                break
-
-            # Capacidade da mochila (mm)
-            W = int(round(largura_m * 1000.0))
-            if W <= 0:
-                break
-
-            # Expansão em itens unitários (bounded -> vários unários)
-            items = []
-            for t in tipos:
-                w_mm = int(round(t["passo"] * 1000.0))
-                v_mm = w_mm  # maximizar largura ocupada
-                for _ in range(t["qtd_max"]):
-                    items.append((w_mm, v_mm, t))
-
-            # DP 1D: dp[w] = valor; keep[w] = (w_prev, k_item)
-            dp = [-1] * (W + 1)
-            keep = [None] * (W + 1)
-            dp[0] = 0
-            for k, (w_mm, v_mm, t) in enumerate(items):
-                for w in range(W, w_mm - 1, -1):
-                    if dp[w - w_mm] != -1:
-                        cand = dp[w - w_mm] + v_mm
-                        if cand > dp[w]:
-                            dp[w] = cand
-                            keep[w] = (w - w_mm, k)
-
-            w_best = max(range(W + 1), key=lambda w: dp[w])
-            if dp[w_best] <= 0:
-                break  # nada melhorou
-
-            # Reconstrói escolha ótima
-            usados_por_tipo = {}
-            w = w_best
-            while w > 0 and keep[w] is not None:
-                w_prev, k = keep[w]
-                _, _, t = items[k]
-                usados_por_tipo[t["idx"]] = usados_por_tipo.get(t["idx"], 0) + 1
-                w = w_prev
-
-            if not usados_por_tipo:
-                break
-
-            # Constrói a camada com as escolhas
-            camada = Camada(diametro_base=2.0 * r_atual)
-            lado = lado_inicio
-            maior_d = 0.0
-
-            for idx, qtd in usados_por_tipo.items():
-                t = next(tt for tt in tipos if tt["idx"] == idx)
-                L = t["L"]
-                d = t["d_m"]
-                C = t["compr_por_faixa"]
-                p = t["passo"]
-                r_mid = t["r_mid"]
-
-                comprimento_total = qtd * C
-                # segurança extra (já respeitado pela DP)
-                comprimento_total = min(
-                    comprimento_total,
-                    rem[id(L)],
-                    val.max_comprimento_por_peso(bobina, L),
-                    val.max_comprimento_por_volume(bobina, L),
+                itens.append(
+                    ItemFaixa(
+                        linha=L,
+                        passo_m=passo_m,
+                        comp_por_faixa_m=comp_por_faixa_m,
+                        qtd_max=qtd_max,
+                        r_mid_m=r_mid_m,
+                        d_m=d_m,
+                        sobra_linha_m=rem_L
+                    )
                 )
-                faixas_ok = int(math.floor(comprimento_total / C))
-                if faixas_ok <= 0:
+                props[L] = (r_mid_m, comp_por_faixa_m, passo_m)
+
+            if not itens:
+                # nenhuma linha cabe nesta camada com o raio atual
+                break
+
+            # 1) Seleção ótima por knapsack (largura + comprimento como desempate)
+            escolhas = selecionar_faixas(
+                itens=itens,
+                largura_m=largura_m,
+                valor_fn=valor_largura_comprimento,  # troque aqui se quiser outro objetivo
+            )
+
+            if not escolhas:
+                # por segurança (não deveria ocorrer se itens existirem)
+                break
+
+            # 2) Registro geométrico da camada
+            camada = Camada(diametro_base=2.0 * r_base_m)
+            maior_d_m = registrar_na_camada(
+                camada=camada,
+                escolhas=escolhas,
+                props=props,
+                largura_m=largura_m,
+                lado_inicio=lado_inicio
+            )
+
+            if maior_d_m <= EPS or not getattr(camada, "linhas", None):
+                # nada foi realmente alocado
+                break
+
+            # Debita remanescentes das linhas escolhidas
+            for L, faixas in escolhas.items():
+                if faixas <= 0:
                     continue
+                r_mid_m, comp_por_faixa_m, _ = props[L]
+                rem[id(L)] = max(0.0, rem[id(L)] - faixas * comp_por_faixa_m)
 
-                camada.adicionar_linha(
-                    linha=L,
-                    pos_x=0.0,
-                    pos_y=r_mid,
-                    ordem=None,
-                    comprimento_alocado=faixas_ok * C,
-                    voltas_usadas=faixas_ok,                           # nº de faixas
-                    voltas_capacidade=int(largura_m / max(EPS, p)),    # teórica p/ essa linha
-                    passo=p,
-                    lado=lado
-                )
-                rem[id(L)] -= faixas_ok * C
-                maior_d = max(maior_d, d)
-                lado = "direita" if lado == "esquerda" else "esquerda"
-
-            # nada escolhido de fato? encerra
-            if maior_d <= EPS or not camada.linhas:
-                break
-
+            # 3) Empilha a camada na bobina e avança raio
             bobina.adicionar_camada(camada)
-            r_atual += maior_d  # espessura = maior diâmetro usado
-
-            if 2.0 * r_atual > de_total + EPS:
-                break
-
+            r_base_m += maior_d_m
             lado_inicio = "direita" if lado_inicio == "esquerda" else "esquerda"
 
-        # Linhas com sobra
+            # segurança DE
+            if 2.0 * r_base_m > de_total_m + EPS:
+                break
+
+        # Linhas que ficaram com remanescente são reportadas como "não totalmente alocadas"
         for L in linhas_ord:
             if rem[id(L)] > EPS:
                 linhas_nao.append(L)
